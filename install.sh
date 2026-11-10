@@ -17,8 +17,13 @@ EXE="$HERE/Knytt.exe"
 FILTER="$HERE/Scale.sft"            # sizes the picture; tools/scale.c
 PATCH="$HERE/tools/patch-game.py"   # adds the filter to a copy of the game
 DEST="$HOME/Games/Knytt"
-MENU="${XDG_DATA_HOME:-$HOME/.local/share}/applications/knytt.desktop"
-SHORTCUT="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")/knytt.desktop"
+# The Pi's taskbar finds a window's icon through a menu entry named after the window's
+# class, stdrt.exe for this game, the engine Knytt unpacks and runs. The desktop shortcut carries the same name.
+MENU="${XDG_DATA_HOME:-$HOME/.local/share}/applications/stdrt.exe.desktop"
+SHORTCUT="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")/stdrt.exe.desktop"
+# The names both had in earlier versions, cleared on install and on remove.
+OLD_MENU="$(dirname "$MENU")/knytt.desktop"
+OLD_SHORTCUT="$(dirname "$SHORTCUT")/knytt.desktop"
 BOOTCFG=/boot/firmware/config.txt
 
 if ! command -v zenity >/dev/null || [ -z "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
@@ -62,7 +67,7 @@ Terminal=false
 Categories=Game;
 StartupWMClass=stdrt.exe
 EOF
-  rm -f "$SHORTCUT"
+  rm -f "$SHORTCUT" "$OLD_MENU" "$OLD_SHORTCUT"
   cp "$MENU" "$SHORTCUT"
   "$DEST/wine/bin/wine" --version >&2
 )
@@ -77,7 +82,7 @@ if [ -e "$DEST/run.sh" ]; then
     --cancel-label="Cancel" --ok-label="Reinstall" --extra-button="Remove")
   status=$?
   if [ "$choice" = "Remove" ]; then
-    rm -rf "$DEST" "$MENU" "$SHORTCUT"
+    rm -rf "$DEST" "$MENU" "$SHORTCUT" "$OLD_MENU" "$OLD_SHORTCUT"
     note "$GAME has been removed from this Raspberry Pi."
     exit 0
   fi
