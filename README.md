@@ -105,6 +105,16 @@ A release is the installer, the runtime, the game, the filter, the patch script,
 git archive --format=tar.gz --prefix=PiKnytt/ -o PiKnytt.tar.gz HEAD install.sh runtime.tar.xz Knytt.exe Scale.sft tools/patch-game.py icon.png LICENSE
 ```
 
+## Pi Projects
+
+PiKnytt is one of three projects for the Raspberry Pi. One is a utility for the desktop, and two bring favourite old freeware games to the Pi with the same kind of installer.
+
+| Project | What it is |
+| --- | --- |
+| [PiOSBeachBall](https://github.com/jameshansen/PiOSBeachBall) | A spinning beachball pointer that shows when an app is loading. |
+| **PiKnytt** | Knytt, the 2006 exploration platformer by Nifflas, installed and ready to play. |
+| [PiKlassOf99](https://github.com/jameshansen/PiKlassOf99) | Klass of 99, Richard Jordan's Skool Daze remake, installed and ready to play. |
+
 ## AI use disclosure
 
 PiKnytt was built using [Claude Code](https://claude.com/claude-code) with Claude Fable 5.2.
