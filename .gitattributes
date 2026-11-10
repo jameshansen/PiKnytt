@@ -3,3 +3,6 @@
 *.png binary
 *.xz binary
 *.exe binary
+*.sft binary
+*.py text eol=lf
+*.c text eol=lf

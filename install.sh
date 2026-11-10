@@ -1,7 +1,7 @@
 #!/bin/bash
 # PiKnytt: installs Knytt on 64-bit Raspberry Pi OS.
 #
-# Run it from the Pi's desktop, with Knytt.exe, runtime.tar.xz and icon.png next to it.
+# Run it from the Pi's desktop, from the folder it came in.
 # The game goes into ~/Games/Knytt, with an entry in the Games menu and a shortcut on
 # the desktop. Run it again to reinstall or remove.
 set -u
@@ -14,6 +14,8 @@ RUNTIME="$HERE/runtime.tar.xz"
 RUNTIME_FILES=505   # entries in runtime.tar.xz, for the progress bar
 ICON="$HERE/icon.png"
 EXE="$HERE/Knytt.exe"
+FILTER="$HERE/Scale.sft"            # sizes the picture; tools/scale.c
+PATCH="$HERE/tools/patch-game.py"   # adds the filter to a copy of the game
 DEST="$HOME/Games/Knytt"
 MENU="${XDG_DATA_HOME:-$HOME/.local/share}/applications/knytt.desktop"
 SHORTCUT="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")/knytt.desktop"
@@ -45,7 +47,7 @@ install_files() (
   done
   echo 92
   echo "# Copying $GAME..."
-  cp "$EXE" "$DEST/game/Knytt.exe"
+  python3 "$PATCH" "$EXE" "$FILTER" "$DEST/game/Knytt.exe"
   echo 96
   echo "# Adding the menu entry and the desktop shortcut..."
   cp "$ICON" "$DEST/icon.png"
@@ -67,8 +69,8 @@ EOF
 
 [ "$(dpkg --print-architecture 2>/dev/null)" = arm64 ] ||
   fail "This installer is for 64-bit Raspberry Pi OS. This system is $(uname -m)."
-[ -f "$RUNTIME" ] && [ -f "$ICON" ] && [ -f "$EXE" ] ||
-  fail "Knytt.exe, runtime.tar.xz and icon.png belong next to install.sh, and one of them is missing. Download the whole package again."
+[ -f "$RUNTIME" ] && [ -f "$ICON" ] && [ -f "$EXE" ] && [ -f "$FILTER" ] && [ -f "$PATCH" ] ||
+  fail "A file that belongs next to install.sh is missing. Download the whole package again."
 
 if [ -e "$DEST/run.sh" ]; then
   choice=$(page --text="<b>$GAME is already installed on this Raspberry Pi.</b>\n\nReinstall sets it up again and keeps your saved games. Remove deletes the game, its saved games and its shortcuts." \
@@ -113,5 +115,5 @@ $(tail -5 "$log")"
 fi
 rm -f "$log"
 
-page --text="<b>$GAME is installed.</b>\n\nIt is in the Games menu and on the desktop. For a bigger picture, pick your slot, then choose Full screen in the Game menu. Alt+Enter returns to the window." \
+page --text="<b>$GAME is installed.</b>\n\nIt is in the Games menu and on the desktop. The Game menu has three window sizes and Full screen. Alt+Enter switches full screen on and off." \
   --cancel-label="Close" --ok-label="Play Now" && setsid "$DEST/run.sh" >/dev/null 2>&1 &
