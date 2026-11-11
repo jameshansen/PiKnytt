@@ -11,6 +11,9 @@
 //   - Full screen is a borderless window at the largest whole multiple, so the display
 //     mode never changes.
 //
+// The picture is drawn by the graphics chip where it can be: it goes there at its own
+// 600 x 240 and the chip scales it. Where that fails, the processor scales it instead.
+//
 // Build with tools/build-scale.sh.
 #include <windows.h>
 
@@ -237,13 +240,233 @@ static BOOL sharp_blit(HDC dc, int w, int h, HDC src, int sw, int sh) {
   return TRUE;
 }
 
-// The runtime's blit: the whole picture, stretched to the picture window. A whole multiple
-// goes through as it is, since the runtime's stretch repeats pixels exactly.
+// ---- Drawing on the graphics chip -------------------------------------------------------
+// Scaling on the processor touches every screen pixel twice, once to stretch the picture
+// and once to hand it to the display, and at 3x a Pi 400 cannot do that 50 times a second.
+// Here the picture goes to the chip as a 600 x 240 texture and the chip draws it at the
+// size of the picture window.
+//
+// At a whole multiple it repeats each pixel. At sizes in between it does that first, into
+// a texture a whole number of times larger, and then draws that texture at the window's
+// size with the chip's own smoothing. Only the screen pixels that straddle two game pixels
+// come out blended, which is the sharp bilinear picture the code above makes. Nothing is
+// worked out per pixel, since a Pi's chip is slow at arithmetic and quick at reading textures.
+//
+// The drawing surface belongs to the picture window. Wine shows a window's OpenGL output
+// only where no child window covers it, and the picture window covers the main one.
+
+#define GL_TEXTURE_2D 0x0de1
+#define GL_NEAREST 0x2600
+#define GL_LINEAR 0x2601
+#define GL_CLAMP_TO_EDGE 0x812f
+#define GL_RGB 0x1907
+#define GL_BGRA 0x80e1
+#define GL_UNSIGNED_BYTE 0x1401
+#define GL_QUADS 7
+#define GL_COLOR_BUFFER_BIT 0x4000
+#define GL_FRAMEBUFFER 0x8d40
+#define GL_COLOR_ATTACHMENT0 0x8ce0
+#define GL_FRAMEBUFFER_COMPLETE 0x8cd5
+#define GL_MAX_TEXTURE_SIZE 0x0d33
+
+// The OpenGL calls used, looked up by name so the game still starts without OpenGL.
+// The first GL_CORE come from opengl32.dll, the rest from the driver once a context is current.
+static struct {
+  HGLRC (WINAPI *CreateContext)(HDC);
+  BOOL (WINAPI *MakeCurrent)(HDC, HGLRC);
+  BOOL (WINAPI *DeleteContext)(HGLRC);
+  PROC (WINAPI *GetProcAddress)(LPCSTR);
+  void (WINAPI *Viewport)(int, int, int, int);
+  void (WINAPI *Enable)(unsigned);
+  void (WINAPI *Clear)(unsigned);
+  void (WINAPI *GetIntegerv)(unsigned, int *);
+  void (WINAPI *GenTextures)(int, unsigned *);
+  void (WINAPI *BindTexture)(unsigned, unsigned);
+  void (WINAPI *TexParameteri)(unsigned, unsigned, int);
+  void (WINAPI *TexImage2D)(unsigned, int, int, int, int, int, unsigned, unsigned, const void *);
+  void (WINAPI *TexSubImage2D)(unsigned, int, int, int, int, int, unsigned, unsigned, const void *);
+  void (WINAPI *Begin)(unsigned);
+  void (WINAPI *End)(void);
+  void (WINAPI *TexCoord2f)(float, float);
+  void (WINAPI *Vertex2f)(float, float);
+  void (WINAPI *GenFramebuffers)(int, unsigned *);
+  void (WINAPI *BindFramebuffer)(unsigned, unsigned);
+  void (WINAPI *FramebufferTexture2D)(unsigned, unsigned, unsigned, unsigned, int);
+  unsigned (WINAPI *CheckFramebufferStatus)(unsigned);
+} gl;
+#define GL_CORE 17
+static const char *const glNames[] = {
+  "wglCreateContext", "wglMakeCurrent", "wglDeleteContext", "wglGetProcAddress", "glViewport", "glEnable",
+  "glClear", "glGetIntegerv", "glGenTextures", "glBindTexture", "glTexParameteri", "glTexImage2D", "glTexSubImage2D",
+  "glBegin", "glEnd", "glTexCoord2f", "glVertex2f",
+  "glGenFramebuffers", "glBindFramebuffer", "glFramebufferTexture2D", "glCheckFramebufferStatus"};
+#define GL_CALLS ((int)(sizeof glNames / sizeof *glNames))
+
+static HDC glDC;                   // the picture window's, kept for good
+static unsigned glPicture, glBig;  // the game's picture, and the same enlarged a whole number of times
+static unsigned glBuffer;          // draws into glBig
+static int glW, glH, glTimes;      // the picture's size, and how many times larger glBig is
+static int glLimit;                // the widest texture the chip takes
+
+// A texture that repeats at its edges and is read with `filter`, left bound.
+static unsigned gl_texture(int filter) {
+  unsigned texture;
+  gl.GenTextures(1, &texture);
+  gl.BindTexture(GL_TEXTURE_2D, texture);
+  gl.TexParameteri(GL_TEXTURE_2D, 0x2801, filter);            // when shrunk
+  gl.TexParameteri(GL_TEXTURE_2D, 0x2800, filter);            // when enlarged
+  gl.TexParameteri(GL_TEXTURE_2D, 0x2802, GL_CLAMP_TO_EDGE);  // across
+  gl.TexParameteri(GL_TEXTURE_2D, 0x2803, GL_CLAMP_TO_EDGE);  // and down
+  return texture;
+}
+
+// The texture that is bound, drawn over everything being drawn into. `top` is the
+// texture row that comes out at the top. Clearing first tells the chip that what was
+// there before is not wanted, which saves it reading that back in.
+static void gl_draw(float top) {
+  gl.Clear(GL_COLOR_BUFFER_BIT);
+  gl.Begin(GL_QUADS);
+  gl.TexCoord2f(0, 1 - top); gl.Vertex2f(-1, -1);
+  gl.TexCoord2f(1, 1 - top); gl.Vertex2f(1, -1);
+  gl.TexCoord2f(1, top);     gl.Vertex2f(1, 1);
+  gl.TexCoord2f(0, top);     gl.Vertex2f(-1, 1);
+  gl.End();
+}
+
+// A context for the window behind `dc`, current on this thread and ready to draw. NULL
+// if any step fails.
+static HGLRC gl_context(HDC dc) {
+  PIXELFORMATDESCRIPTOR pfd = {sizeof pfd, 1, PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER, PFD_TYPE_RGBA, 24};
+  int format = ChoosePixelFormat(dc, &pfd);
+  if (!format || !SetPixelFormat(dc, format, &pfd)) return NULL;
+  HGLRC context = gl.CreateContext(dc);
+  if (!context) return NULL;
+  if (gl.MakeCurrent(dc, context)) {
+    void **slot = (void **)&gl;
+    int i = GL_CORE;
+    while (i < GL_CALLS && (slot[i] = (void *)gl.GetProcAddress(glNames[i]))) i++;
+    if (i == GL_CALLS) {
+      gl.Enable(GL_TEXTURE_2D);
+      gl.GetIntegerv(GL_MAX_TEXTURE_SIZE, &glLimit);
+      gl.GenFramebuffers(1, &glBuffer);
+      glBig = gl_texture(GL_LINEAR);
+      glPicture = gl_texture(GL_NEAREST);
+      glW = glH = glTimes = 0;
+      return context;
+    }
+    gl.MakeCurrent(NULL, NULL);
+  }
+  gl.DeleteContext(context);
+  return NULL;
+}
+
+// Sets the chip up to draw in the picture window. Once a window has an OpenGL surface, what
+// GDI draws in it no longer shows, so everything is tried on a throwaway window first.
+static BOOL gl_start(void) {
+  HMODULE lib = LoadLibraryA("opengl32.dll");
+  void **slot = (void **)&gl;
+  for (int i = 0; i < GL_CORE; i++)
+    if (!lib || !(slot[i] = (void *)GetProcAddress(lib, glNames[i]))) return FALSE;
+  HWND probe = CreateWindowExA(0, "STATIC", "", WS_POPUP, 0, 0, 8, 8, NULL, NULL, NULL, NULL);
+  if (!probe) return FALSE;
+  HDC dc = GetDC(probe);
+  HGLRC context = gl_context(dc);
+  if (context) {
+    gl.MakeCurrent(NULL, NULL);
+    gl.DeleteContext(context);
+  }
+  ReleaseDC(probe, dc);
+  DestroyWindow(probe);
+  if (!context) return FALSE;
+  glDC = GetDC(pictureWnd);
+  if (!gl_context(glDC)) return FALSE;
+  // The game keeps its own time, so a frame is shown as soon as it is drawn.
+  BOOL (WINAPI *interval)(int) = (BOOL (WINAPI *)(int))gl.GetProcAddress("wglSwapIntervalEXT");
+  if (interval) interval(0);
+  return TRUE;
+}
+
+// Draws the bitmap selected into `src`, the game's whole picture, in the picture window's
+// place. FALSE if the chip cannot be used, or the bitmap is not the 32-bit one expected.
+static BOOL gpu_blit(HDC src) {
+  static int state;   // 0 not tried yet, 1 working, -1 failed: the processor draws from then on
+  DIBSECTION ds;
+  if (state < 0 || GetObjectA(GetCurrentObject(src, OBJ_BITMAP), sizeof ds, &ds) != sizeof ds) return FALSE;
+  int W = ds.dsBm.bmWidth, H = ds.dsBm.bmHeight;
+  if (ds.dsBm.bmBitsPixel != 32 || !ds.dsBm.bmBits || ds.dsBm.bmWidthBytes != W * 4) return FALSE;
+  if (!state) state = gl_start() ? 1 : -1;
+  if (state < 0) return FALSE;
+
+  RECT r;
+  picture_rect(&r);
+  int w = r.right, h = r.bottom;
+  if (w < 1 || h < 1) return TRUE;   // nothing to see, as when minimized
+  if (W != glW || H != glH) {
+    gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGB, W, H, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+    glW = W;
+    glH = H;
+    glTimes = 0;
+  }
+  gl.TexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, W, H, GL_BGRA, GL_UNSIGNED_BYTE, ds.dsBm.bmBits);
+  // OpenGL counts rows from the bottom, as a bottom-up bitmap does.
+  float top = ds.dsBmih.biHeight > 0 ? 1 : 0;
+
+  // How many whole times larger to make the picture first: as many as fit in the window,
+  // and in a texture. Once is no enlarging, which is right for a window smaller than 2x.
+  int times = w / W < h / H ? w / W : h / H;
+  while (times > 1 && (W * times > glLimit || H * times > glLimit)) times--;
+  if (w % W == 0 && h % H == 0) {
+    gl.Viewport(0, 0, w, h);
+    gl_draw(top);
+  } else if (times < 2) {
+    gl.TexParameteri(GL_TEXTURE_2D, 0x2801, GL_LINEAR);
+    gl.TexParameteri(GL_TEXTURE_2D, 0x2800, GL_LINEAR);
+    gl.Viewport(0, 0, w, h);
+    gl_draw(top);
+    gl.TexParameteri(GL_TEXTURE_2D, 0x2801, GL_NEAREST);
+    gl.TexParameteri(GL_TEXTURE_2D, 0x2800, GL_NEAREST);
+  } else {
+    gl.BindTexture(GL_TEXTURE_2D, glBig);
+    if (times != glTimes) {
+      gl.TexImage2D(GL_TEXTURE_2D, 0, GL_RGB, W * times, H * times, 0, GL_BGRA, GL_UNSIGNED_BYTE, NULL);
+      glTimes = times;
+    }
+    gl.BindFramebuffer(GL_FRAMEBUFFER, glBuffer);
+    gl.FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, glBig, 0);
+    BOOL usable = gl.CheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+    gl.BindTexture(GL_TEXTURE_2D, glPicture);
+    if (usable) {
+      gl.Viewport(0, 0, W * times, H * times);
+      gl_draw(top);
+      top = 1;   // glBig has its rows the way OpenGL counts them
+    }
+    gl.BindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl.Viewport(0, 0, w, h);
+    if (usable) gl.BindTexture(GL_TEXTURE_2D, glBig);
+    gl_draw(top);
+    gl.BindTexture(GL_TEXTURE_2D, glPicture);
+  }
+  SwapBuffers(glDC);
+  return TRUE;
+}
+
+// The runtime's blit: the whole picture, stretched to the picture window. The chip draws
+// it if it can. Otherwise a whole multiple goes through as it is, since the runtime's
+// stretch repeats pixels exactly, and other sizes get sharp bilinear on the processor.
 static BOOL WINAPI stretch_blt(HDC dc, int x, int y, int w, int h, HDC src, int sx, int sy, int sw, int sh, DWORD rop) {
-  if (rop == SRCCOPY && !x && !y && !sx && !sy && sw > 0 && sh > 0 && (w % sw || h % sh) &&
-      WindowFromDC(dc) == pictureWnd && sharp_blit(dc, w, h, src, sw, sh))
-    return TRUE;
+  if (rop == SRCCOPY && WindowFromDC(dc) == pictureWnd) {
+    if (gpu_blit(src)) return TRUE;
+    if (!x && !y && !sx && !sy && sw > 0 && sh > 0 && (w % sw || h % sh) && sharp_blit(dc, w, h, src, sw, sh))
+      return TRUE;
+  }
   return StretchBlt(dc, x, y, w, h, src, sx, sy, sw, sh, rop);
+}
+
+// The runtime copies part of the picture across when only that part has changed. The
+// chip draws the whole picture each time, which covers it.
+static BOOL WINAPI bit_blt(HDC dc, int x, int y, int w, int h, HDC src, int sx, int sy, DWORD rop) {
+  if (rop == SRCCOPY && WindowFromDC(dc) == pictureWnd && gpu_blit(src)) return TRUE;
+  return BitBlt(dc, x, y, w, h, src, sx, sy, rop);
 }
 
 // Points a module's import of a GDI function at ours.
@@ -277,6 +500,7 @@ static DWORD WINAPI attach(void *unused) {
   }
   if (!pictureWnd) return 0;
   hook("mmfs2.dll", "StretchBlt", stretch_blt);
+  hook("mmfs2.dll", "BitBlt", bit_blt);
   pictureProc = (WNDPROC)SetWindowLongA(pictureWnd, GWL_WNDPROC, (LONG)picture_proc);
   mainProc = (WNDPROC)SetWindowLongA(mainWnd, GWL_WNDPROC, (LONG)main_proc);
   PostMessageA(mainWnd, initMsg, 0, 0);
