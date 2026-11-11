@@ -6,6 +6,8 @@
 
 <p align="center"><a href="../../releases/latest"><b>Download for Raspberry Pi OS</b></a></p>
 
+<p align="center">Discord: <a href="https://discord.gg/88VzuWSYUc">https://discord.gg/88VzuWSYUc</a></p>
+
 ![Knytt running on a Raspberry Pi 400](docs/knytt-pi.png)
 
 ## What it does
@@ -112,13 +114,14 @@ git archive --format=tar.gz --prefix=PiKnytt/ -o PiKnytt.tar.gz HEAD install.sh 
 
 ## Pi Projects
 
-PiKnytt is one of three projects for the Raspberry Pi. One is a utility for the desktop, and two bring favourite old freeware games to the Pi with the same kind of installer.
+PiKnytt is one of four projects for the Raspberry Pi. One is a utility for the desktop, and three bring favourite old free games to the Pi with the same kind of installer.
 
 | Project | What it is |
 | --- | --- |
 | [PiOSBeachBall](https://github.com/jameshansen/PiOSBeachBall) | A spinning beachball pointer that shows when an app is loading. |
 | **PiKnytt** | Knytt, the 2006 exploration platformer by Nifflas, installed and ready to play. |
 | [PiKlassOf99](https://github.com/jameshansen/PiKlassOf99) | Klass of 99, Richard Jordan's Skool Daze remake, installed and ready to play. |
+| [PiPakoon](https://github.com/jameshansen/PiPakoon) | Pakoon 0, 1 and 2, Mikko Oksalahti's driving games, built for the Pi with a launcher to pick between them. |
 
 ## AI use disclosure
 
