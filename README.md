@@ -18,6 +18,8 @@ The whole install is 150 MB in one folder in your home folder.
 
 Knytt is the work of Nifflas, who released it as freeware in 2006. His site, nifflas.ni2.se, no longer serves the download, so this repository carries `Knytt.exe` itself. It is the original 1.0.2 release, unmodified. The installer patches the copy it installs so the picture can be scaled.
 
+The original soundtrack is archived in [`music/`](music) as 45 MP3 tracks, each named for its composer and the area or scene it belongs to. The music is by Nifflas, cdnalsi, Decibelter, Anders and Gopher.
+
 **The game is back in print as [Knytt Classic](https://store.steampowered.com/app/2656050/Knytt_Classic/).** Nifflas and Bit Kid rebuilt it for its twentieth anniversary, and it is free on Steam for Windows, macOS and Linux PCs. On a PC, play that. PiKnytt exists for the Raspberry Pi, whose ARM processor that version is not built for.
 
 PiKnytt is an unofficial installer and is not affiliated with Nifflas.
@@ -124,10 +126,10 @@ PiKnytt was built using [Claude Code](https://claude.com/claude-code) with Claud
 
 ## Credits
 
-Knytt was made by Nicklas Nygren (Nifflas). The full credits are on the game's title screen. The icon is the game's own, set on a sky taken from the game.
+Knytt was made by Nicklas Nygren (Nifflas). The full credits are on the game's title screen. The soundtrack in `music/` is by Nifflas, cdnalsi, Decibelter, Anders and Gopher. The icon is the game's own, set on a sky taken from the game.
 
 The runtime is built from [Hangover](https://github.com/AndreRH/hangover) 11.16 by André Zwing and contributors, which combines [Wine](https://www.winehq.org) (LGPL 2.1 or later) with [Box64](https://github.com/ptitSeb/box64) by ptitSeb (MIT). Source for those binaries is at the Hangover 11.16 tag.
 
 ## Licence
 
-The installer, `Scale.sft` and the build scripts are free software under the [MIT licence](LICENSE). `Knytt.exe` is not covered by it. The game remains the copyright of Nicklas Nygren and is included as the freeware release he published. The Wine and Box64 binaries in `runtime.tar.xz` keep their own licences, named above.
+The installer, `Scale.sft` and the build scripts are free software under the [MIT licence](LICENSE). `Knytt.exe` and the soundtrack in `music/` are not covered by it. The game remains the copyright of Nicklas Nygren and is included as the freeware release he published. The music remains the copyright of its composers. The Wine and Box64 binaries in `runtime.tar.xz` keep their own licences, named above.
