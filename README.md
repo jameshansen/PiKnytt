@@ -114,7 +114,7 @@ git archive --format=tar.gz --prefix=PiKnytt/ -o PiKnytt.tar.gz HEAD install.sh 
 
 ## Pi Projects
 
-PiKnytt is one of four projects for the Raspberry Pi. One is a utility for the desktop, and three bring favourite old free games to the Pi with the same kind of installer.
+PiKnytt is one of five projects for the Raspberry Pi. One is a utility for the desktop, and four bring favourite old games to the Pi with the same kind of installer.
 
 | Project | What it is |
 | --- | --- |
@@ -122,6 +122,7 @@ PiKnytt is one of four projects for the Raspberry Pi. One is a utility for the d
 | **PiKnytt** | Knytt, the 2006 exploration platformer by Nifflas, installed and ready to play. |
 | [PiKlassOf99](https://github.com/jameshansen/PiKlassOf99) | Klass of 99, Richard Jordan's Skool Daze remake, installed and ready to play. |
 | [PiPakoon](https://github.com/jameshansen/PiPakoon) | Pakoon 0, 1 and 2, Mikko Oksalahti's driving games, built for the Pi with a launcher to pick between them. |
+| [PiArcBoot](https://github.com/jameshansen/PiArcBoot) | Acorn Archimedes games from JASPP, installed and booted straight into the game. |
 
 ## AI use disclosure
 
